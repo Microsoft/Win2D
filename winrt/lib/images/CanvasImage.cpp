@@ -406,12 +406,11 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas
 
     ComPtr<IWICImagingFactory2> const& DefaultCanvasImageAdapter::GetFactory()
     {
-        if (!m_wicAdapter)
-        {
+        std::call_once(m_initWicAdapterFlag, [this] {
             // Hold on to the wic adapter so it doesn't keep getting destroyed
             // and recreated.
             m_wicAdapter = WicAdapter::GetInstance();
-        }
+        });
 
         return m_wicAdapter->GetFactory();
     }

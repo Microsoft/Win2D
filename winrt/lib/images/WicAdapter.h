@@ -21,6 +21,7 @@ public:
 class DefaultWicAdapter : public WicAdapter
 {
     ComPtr<IWICImagingFactory2> m_wicFactory;
+    std::once_flag m_initFactoryFlag;
 
 public:
     DefaultWicAdapter()
@@ -29,15 +30,14 @@ public:
 
     virtual ComPtr<IWICImagingFactory2> const& GetFactory() override
     {
-        if (!m_wicFactory)
-        {
+        std::call_once(m_initFactoryFlag, [this] {
             ThrowIfFailed(
                 CoCreateInstance(
                     CLSID_WICImagingFactory,
                     nullptr,
                     CLSCTX_INPROC_SERVER,
-                    IID_PPV_ARGS(&m_wicFactory)));        
-        }
+                    IID_PPV_ARGS(&m_wicFactory)));
+        });
 
         return m_wicFactory;
     }

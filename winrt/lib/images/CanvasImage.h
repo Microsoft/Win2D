@@ -94,6 +94,7 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas
     class DefaultCanvasImageAdapter : public CanvasImageAdapter
     {
         std::shared_ptr<WicAdapter> m_wicAdapter;
+        std::once_flag m_initWicAdapterFlag;
         
     public:
         virtual ComPtr<IAsyncAction> RunAsync(std::function<void()>&& fn) override;

@@ -272,8 +272,9 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas
 
     WicBitmapSource DefaultBitmapAdapter::CreateWicBitmapSource(ICanvasDevice* device, IStream* fileStream, bool tryEnableIndexing)
     {
+        auto factory = m_wicAdapter->GetFactory();
         ComPtr<IWICBitmapDecoder> wicBitmapDecoder;
-        ThrowIfFailed(m_wicAdapter->GetFactory()->CreateDecoderFromStream(
+        ThrowIfFailed(factory->CreateDecoderFromStream(
             fileStream,
             nullptr,
             WICDecodeMetadataCacheOnDemand,
@@ -310,7 +311,7 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas
         auto transformOptions = GetTransformOptionsFromPhotoOrientation(orientation);
 
         ComPtr<IWICFormatConverter> wicFormatConverter;
-        ThrowIfFailed(m_wicAdapter->GetFactory()->CreateFormatConverter(&wicFormatConverter));
+        ThrowIfFailed(factory->CreateFormatConverter(&wicFormatConverter));
 
         auto targetPixelFormat = GUID_WICPixelFormat32bppPBGRA;
 
