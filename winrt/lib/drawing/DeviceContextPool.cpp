@@ -27,8 +27,12 @@ DeviceContextLease DeviceContextPool::TakeLease()
     
     if (m_deviceContexts.empty())
     {
+        //Store a local copy of the non-null device pointer before unlocking.
+        auto localDevice = m_d2dDevice;
+        //Release lock before creating the device context to avoid potential deadlock scenarios.
+        lock.unlock();
         ComPtr<ID2D1DeviceContext1> deviceContext;
-        ThrowIfFailed(m_d2dDevice->CreateDeviceContext(
+        ThrowIfFailed(localDevice->CreateDeviceContext(
             D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
             &deviceContext));
         return DeviceContextLease(this, std::move(deviceContext));
