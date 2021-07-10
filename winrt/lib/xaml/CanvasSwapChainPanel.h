@@ -39,7 +39,7 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas { na
         std::shared_ptr<ICanvasSwapChainPanelAdapter> m_adapter;
 
         ComPtr<ICanvasSwapChain> m_canvasSwapChain;
-        ComPtr<IDependencyObject> m_lastSeenParent;
+        WeakRef m_lastSeenParent;
 
     public:
         CanvasSwapChainPanel(std::shared_ptr<ICanvasSwapChainPanelAdapter> adapter);

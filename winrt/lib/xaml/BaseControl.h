@@ -134,7 +134,7 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas { na
 
         RenderTarget m_currentRenderTarget;
 
-        ComPtr<IDependencyObject> m_lastSeenParent;
+        WeakRef m_lastSeenParent;
 
         ComPtr<ICanvasDevice> m_customDevice;
 
@@ -233,7 +233,11 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas { na
             return ExceptionBoundary(
                 [&]
                 {
-                    RemoveFromVisualTreeImpl(m_lastSeenParent.Get(), As<IUIElement>(GetControl()).Get());
+                    auto control = As<IUIElement>(GetControl()); //Do this first because the unit tests expect a failure when this cast fails.
+                    if (!m_lastSeenParent) {
+                        return;
+                    }
+                    RemoveFromVisualTreeImpl(LockWeakRef<IDependencyObject>(m_lastSeenParent).Get(), control.Get());
                 });
         }
 
@@ -913,7 +917,13 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas { na
 
         void UpdateLastSeenParent()
         {
-            As<IFrameworkElement>(GetControl()->GetComposableBase())->get_Parent(&m_lastSeenParent);
+            ComPtr<IDependencyObject> parent;
+            As<IFrameworkElement>(GetControl()->GetComposableBase())->get_Parent(&parent);
+            if (!parent) {
+                m_lastSeenParent.Reset();
+                return;
+            }
+            m_lastSeenParent = AsWeak(parent.Get());
         }
 
         HRESULT OnUnloaded(IInspectable*, IRoutedEventArgs*)
