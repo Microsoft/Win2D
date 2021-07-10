@@ -30,6 +30,9 @@
 std::unordered_map<IUnknown*, WeakRef> ResourceManager::m_resources;
 std::recursive_mutex ResourceManager::m_mutex;
 
+std::unordered_multiset<IUnknown*> ResourceManager::m_wrappingResources;
+std::unordered_set<IUnknown*> ResourceManager::m_creatingWrappers;
+
 // When adding new types here, please also update the "Types that support interop" table in winrt\docsrc\Interop.aml.
 std::vector<ResourceManager::TryCreateFunction> ResourceManager::tryCreateFunctions =
 {
@@ -81,11 +84,17 @@ std::vector<ResourceManager::TryCreateFunction> ResourceManager::tryCreateFuncti
 
 
 // Called by the ResourceWrapper constructor, to add itself to the interop mapping table.
-void ResourceManager::Add(IUnknown* resource, IInspectable* wrapper)
+void ResourceManager::Add(IUnknown* resource, IInspectable* wrapper, IUnknown* wrapperIdentity)
 {
     ComPtr<IUnknown> resourceIdentity = AsUnknown(resource);
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    //If this resource is being wrapped by GetOrCreate, then add wrapperIdentity to m_creatingWrappers instead of adding the resource to m_resources.
+    if (m_wrappingResources.find(resourceIdentity.Get()) != m_wrappingResources.end()) {
+        m_creatingWrappers.insert(wrapperIdentity);
+        return;
+    }
 
     auto result = m_resources.insert(std::make_pair(resourceIdentity.Get(), AsWeak(wrapper)));
 
@@ -95,11 +104,16 @@ void ResourceManager::Add(IUnknown* resource, IInspectable* wrapper)
 
 
 // Called by ResourceWrapper::Close, to remove itself from the interop mapping table.
-void ResourceManager::Remove(IUnknown* resource)
+void ResourceManager::Remove(IUnknown* resource, IUnknown* wrapperIdentity)
 {
     ComPtr<IUnknown> resourceIdentity = AsUnknown(resource);
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    //If this wrapper is being created by GetOrCreate, remove from m_creatingWrappers intead of removing the resource from m_resources.
+    if (m_creatingWrappers.erase(wrapperIdentity) > 0) {
+        return;
+    }
 
     auto result = m_resources.erase(resourceIdentity.Get());
 
@@ -113,11 +127,10 @@ ComPtr<IInspectable> ResourceManager::GetOrCreate(ICanvasDevice* device, IUnknow
     ComPtr<IUnknown> resourceIdentity = AsUnknown(resource);
     ComPtr<IInspectable> wrapper;
 
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::unique_lock<std::recursive_mutex> lock(m_mutex);
 
     // Do we already have a wrapper around this resource?
     auto it = m_resources.find(resourceIdentity.Get());
-
     if (it != m_resources.end())
     {
         wrapper = LockWeakRef<IInspectable>(it->second);
@@ -126,6 +139,19 @@ ComPtr<IInspectable> ResourceManager::GetOrCreate(ICanvasDevice* device, IUnknow
     // Create a new wrapper instance?
     if (!wrapper)
     {
+        //Add the resource to the list of resources being wrapped, then unlock to avoid deadlock scenarios
+        m_wrappingResources.insert(resourceIdentity.Get());
+        lock.unlock();
+
+        //Ensure the resource is removed from m_wrappingResources on leaving scope.
+        auto endWrapWarden = MakeScopeWarden([&] { 
+            std::lock_guard<std::recursive_mutex> endWrapLock(m_mutex);
+            auto endWrapIt = m_wrappingResources.find(resourceIdentity.Get());
+            if (endWrapIt != m_wrappingResources.end()) {
+                m_wrappingResources.erase(endWrapIt);
+            }
+        });
+
         for (auto& tryCreateFunction : tryCreateFunctions)
         {
             if (tryCreateFunction(device, resource, dpi, &wrapper))
@@ -139,6 +165,30 @@ ComPtr<IInspectable> ResourceManager::GetOrCreate(ICanvasDevice* device, IUnknow
         {
             ThrowHR(E_NOINTERFACE, Strings::ResourceManagerUnknownType);
         }
+
+        lock.lock();
+        //Check to see if another wrapper was created simultaneously for this resource while we were creating a wrapper.
+        ComPtr<IInspectable> existingWrapper;
+        it = m_resources.find(resourceIdentity.Get());
+        if (it != m_resources.end())
+        {
+            existingWrapper = LockWeakRef<IInspectable>(it->second);
+        }
+        if (existingWrapper) {
+            //If so, unlock and use the other wrapper.
+            lock.unlock();
+            wrapper = existingWrapper;
+        } else {
+            //Else, remove the wrapper from the m_creatingWrappers set and add the resource to m_resources.
+            m_creatingWrappers.erase(AsUnknown(wrapper.Get()).Get());
+            auto result = m_resources.insert(std::make_pair(resourceIdentity.Get(), AsWeak(wrapper.Get())));
+            if (!result.second) {
+                ThrowHR(E_UNEXPECTED);
+            }
+            lock.unlock();
+        }
+    } else {
+        lock.unlock();
     }
 
     // Validate that the object we got back reports the expected device and DPI.

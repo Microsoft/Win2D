@@ -3,6 +3,7 @@
 // Licensed under the MIT License. See LICENSE.txt in the project root for license information.
 
 #pragma once
+#include <unordered_set>
 
 namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas
 {
@@ -26,8 +27,8 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas
     {
     public:
         // Used by ResourceWrapper to maintain its state in the interop mapping table.
-        static void Add(IUnknown* resource, IInspectable* wrapper);
-        static void Remove(IUnknown* resource);
+        static void Add(IUnknown* resource, IInspectable* wrapper, IUnknown * wrapperIdentity);
+        static void Remove(IUnknown* resource, IUnknown* wrapperIdentity);
 
 
         // Used internally, and exposed to apps via CanvasDeviceFactory::GetOrCreate and Microsoft.Graphics.Canvas.native.h.
@@ -157,6 +158,10 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas
         // Native resource -> WinRT wrapper map, shared by all active resources.
         static std::unordered_map<IUnknown*, WeakRef> m_resources;
         static std::recursive_mutex m_mutex;
+
+        //Used temporarily by GetOrCreate in conjunction with Add/Remove to prevent duplicate wrapped resources without having to lock.
+        static std::unordered_multiset<IUnknown*> m_wrappingResources;
+        static std::unordered_set<IUnknown*> m_creatingWrappers;
 
         // Table of try-create functions, one per type.
         static std::vector<TryCreateFunction> tryCreateFunctions;

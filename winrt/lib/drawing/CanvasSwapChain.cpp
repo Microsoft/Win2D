@@ -681,15 +681,18 @@ namespace ABI { namespace Microsoft { namespace Graphics { namespace Canvas
                     ThrowHR(E_FAIL, Strings::CannotCreateDrawingSessionUntilPreviousOneClosed);
 
                 auto d2dDevice = As<ICanvasDeviceInternal>(device)->GetD2DDevice();
-                D2DResourceLock lock(d2dDevice.Get());
 
                 ComPtr<ID2D1DeviceContext1> deviceContext;
-                auto adapter = CanvasSwapChainDrawingSessionAdapter::Create(
-                    device.Get(),
-                    dxgiSwapChain.Get(),
-                    ToD2DColor(clearColor),
-                    m_dpi,
-                    &deviceContext);
+                std::shared_ptr<CanvasSwapChainDrawingSessionAdapter> adapter;
+                {
+                    D2DResourceLock lock(d2dDevice.Get());
+                    adapter = CanvasSwapChainDrawingSessionAdapter::Create(
+                        device.Get(),
+                        dxgiSwapChain.Get(),
+                        ToD2DColor(clearColor),
+                        m_dpi,
+                        &deviceContext);
+                }
                 
                 auto newDrawingSession = CanvasDrawingSession::CreateNew(deviceContext.Get(), adapter, device.Get(), m_hasActiveDrawingSession);
 
